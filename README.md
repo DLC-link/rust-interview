@@ -1,35 +1,25 @@
-# rust-interview
 
-## App brief — Canton Topology Viewer
-Build a small internal tool in Rust that queries a Canton participant’s topology over gRPC, persists
-it, and renders it in the browser. You will be given a bundle of Canton .proto files and a running
-mock Canton at a known endpoint. Generate Rust bindings from the protos, connect, fetch the
-network’s decentralized parties (“decparties”) and their owning namespaces, store the snapshot in
-the database, expose it over a REST API, and visualize it in a minimal frontend. The whole thing
-must run end-to-end with `docker compose up`.
+**App brief — Decentralized Party Explorer**
 
-### Where to look
-The relevant proto is
-`proto/community/com/digitalasset/canton/topology/admin/v30/topology_manager_read_service.proto`.
-The RPC you want is `TopologyManagerReadService.ListDecentralizedNamespaceDefinition`. It returns
-one `Result { context, item }` per decparty; on `item` you get `decentralized_namespace` (the
-namespace fingerprint), `threshold` (signing threshold), and `owners` (the list of member
-namespace fingerprints). Every `List*` RPC on this service takes a `BaseQuery` — the minimum valid
-request body is:
+Build a small internal tool in Rust that queries a live network's topology over gRPC and answers one question: **where do the decentralized parties live?** — which nodes host each one, with what permission. You'll be given a bundle of `.proto` files and a gRPC endpoint to a running network. Generate Rust bindings, fetch the decentralized parties, find their hosting nodes, persist your findings, expose them over a REST API, and visualize them in a minimal frontend. A table is acceptable; a party↔node graph is better. The whole thing must run end-to-end with `docker compose up`.
 
-```json
+**Where to look**
+
+The relevant proto is `topology_manager_read_service.proto`. Two RPCs matter:
+
+1. `TopologyManagerReadService.ListDecentralizedNamespaceDefinition` — one result per decentralized party. On `item` you get `decentralized_namespace` (the party's namespace fingerprint). There are only a few hundred of these on the network.
+2. `TopologyManagerReadService.ListPartyToParticipant` — the hosting data. Each result links a party to the nodes hosting it and their permission (submission / confirmation / observation). Party IDs have the form `name::namespace-fingerprint` — match the fingerprint against step 1.
+
+Every `List*` RPC takes a `BaseQuery`; the minimum valid request body is:
+
+```
 { "base_query": { "store": { "synchronizer": { "physical_id": "<id>" } }, "head_state": {} } }
 ```
 
-Use `TopologyManagerReadService.ListAvailableStores` first to discover the synchronizer’s
-`physical_id`. We deliberately scope the visualization to decparties because there are only
-~hundreds of them on the network — small enough to persist and render comfortably without
-worrying about pagination or memory.
+Call `ListAvailableStores` first to discover the synchronizer's `physical_id`.
 
-### Stretch
-As a follow-up, fetch hosting rights with
-`TopologyManagerReadService.ListPartyToParticipant` and cross-reference each decparty’s namespace
-fingerprint against `item.party` (parties are `name::namespace-fingerprint`) to show which
-participants host which decparties, and with what permission. Note this RPC returns the *full*
-party-to-participant set for the network (tens of thousands of entries), so filter to decparties
-before persisting — don’t store the whole thing.
+Note: `ListPartyToParticipant` returns the **full** hosting set for the network — tens of thousands of entries, almost all irrelevant to you. Decide what you fetch, what you keep, and what you persist.
+
+**Stretch**
+
+Decentralized parties are governed by multiple owner namespaces with a signing threshold — `item.owners` and `item.threshold` on the definition. Add the governance dimension to your view: for each decparty, show its owners and threshold alongside its hosting nodes.
